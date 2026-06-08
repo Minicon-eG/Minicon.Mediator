@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Minicon.Mediator/Minicon.Mediator.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Minicon.Mediator.Tests/Minicon.Mediator.Tests.csproj" />
+  </Folder>
+</Solution>
