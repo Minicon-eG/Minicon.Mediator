@@ -15,7 +15,7 @@ notifications and pipeline behaviors with exactly **one** runtime dependency
 dotnet add package Minicon.Mediator
 ```
 
-Targets `net8.0` and `net10.0`.
+Targets `net10.0`.
 
 ## Usage
 
