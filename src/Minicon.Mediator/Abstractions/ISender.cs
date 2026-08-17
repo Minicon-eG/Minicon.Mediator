@@ -19,4 +19,15 @@ public interface ISender
 	/// Sends a request whose runtime type is not known statically.
 	/// </summary>
 	Task<object?> Send(object request, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Sends a request to its handler and streams the responses as they are produced.
+	/// The handler is resolved eagerly; elements are pulled lazily during enumeration.
+	/// </summary>
+	IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Streams a request whose runtime type is not known statically.
+	/// </summary>
+	IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default);
 }

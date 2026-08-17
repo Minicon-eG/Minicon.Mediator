@@ -13,7 +13,8 @@ public static class MediatorServiceExtensions
 {
 	/// <summary>
 	/// Registers the mediator and scans configured assemblies for
-	/// <see cref="IRequestHandler{TRequest,TResponse}"/> and <see cref="INotificationHandler{TNotification}"/> implementations.
+	/// <see cref="IRequestHandler{TRequest,TResponse}"/>, <see cref="IStreamRequestHandler{TRequest,TResponse}"/>
+	/// and <see cref="INotificationHandler{TNotification}"/> implementations.
 	/// </summary>
 	public static IServiceCollection AddMediator(this IServiceCollection services, Action<MediatorServiceConfiguration> configure)
 	{
@@ -52,6 +53,7 @@ public static class MediatorServiceExtensions
 
 		Type requestHandlerOpen = typeof(IRequestHandler<,>);
 		Type notificationHandlerOpen = typeof(INotificationHandler<>);
+		Type streamRequestHandlerOpen = typeof(IStreamRequestHandler<,>);
 
 		for (int i = 0; i < types.Length; i++)
 		{
@@ -71,7 +73,7 @@ public static class MediatorServiceExtensions
 				}
 
 				Type definition = @interface.GetGenericTypeDefinition();
-				if (definition == requestHandlerOpen || definition == notificationHandlerOpen)
+				if (definition == requestHandlerOpen || definition == notificationHandlerOpen || definition == streamRequestHandlerOpen)
 				{
 					services.Add(new ServiceDescriptor(@interface, type, lifetime));
 				}

@@ -21,6 +21,7 @@ public sealed class Mediator : IMediator
 {
 	private static readonly ConcurrentDictionary<Type, RequestHandlerWrapper> RequestWrapperCache = new();
 	private static readonly ConcurrentDictionary<Type, NotificationHandlerWrapper> NotificationWrapperCache = new();
+	private static readonly ConcurrentDictionary<Type, StreamHandlerWrapper> StreamWrapperCache = new();
 
 	private readonly IServiceProvider _serviceProvider;
 
@@ -58,6 +59,33 @@ public sealed class Mediator : IMediator
 
 		Type requestType = request.GetType();
 		RequestHandlerWrapper wrapper = RequestWrapperCache.GetOrAdd(requestType, CreateRequestWrapper);
+		return wrapper.Handle(request, _serviceProvider, cancellationToken);
+	}
+
+	/// <inheritdoc />
+	public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(request);
+
+		Type requestType = request.GetType();
+		StreamHandlerWrapper untyped = StreamWrapperCache.GetOrAdd(requestType, CreateStreamWrapper);
+		StreamHandlerWrapper<TResponse> wrapper = (StreamHandlerWrapper<TResponse>)untyped;
+		return wrapper.Handle(request, _serviceProvider, cancellationToken);
+	}
+
+	/// <inheritdoc />
+	public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(request);
+
+		if (request is not IBaseRequest)
+		{
+			throw new ArgumentException(
+				$"Type '{request.GetType().FullName}' does not implement '{nameof(IBaseRequest)}'.", nameof(request));
+		}
+
+		Type requestType = request.GetType();
+		StreamHandlerWrapper wrapper = StreamWrapperCache.GetOrAdd(requestType, CreateStreamWrapper);
 		return wrapper.Handle(request, _serviceProvider, cancellationToken);
 	}
 
@@ -118,6 +146,31 @@ public sealed class Mediator : IMediator
 		return (RequestHandlerWrapper)Activator.CreateInstance(wrapperType, nonPublic: true)!;
 	}
 
+	private static StreamHandlerWrapper CreateStreamWrapper(Type requestType)
+	{
+		Type? requestInterface = null;
+		Type[] interfaces = requestType.GetInterfaces();
+		for (int i = 0; i < interfaces.Length; i++)
+		{
+			Type candidate = interfaces[i];
+			if (candidate.IsGenericType && candidate.GetGenericTypeDefinition() == typeof(IStreamRequest<>))
+			{
+				requestInterface = candidate;
+				break;
+			}
+		}
+
+		if (requestInterface is null)
+		{
+			throw new InvalidOperationException(
+				$"Type '{requestType.FullName}' does not implement IStreamRequest<T>.");
+		}
+
+		Type responseType = requestInterface.GetGenericArguments()[0];
+		Type wrapperType = typeof(StreamHandlerWrapperImpl<,>).MakeGenericType(requestType, responseType);
+		return (StreamHandlerWrapper)Activator.CreateInstance(wrapperType, nonPublic: true)!;
+	}
+
 	private static NotificationHandlerWrapper CreateNotificationWrapper(Type notificationType)
 	{
 		Type wrapperType = typeof(NotificationHandlerWrapperImpl<>).MakeGenericType(notificationType);
@@ -127,5 +180,6 @@ public sealed class Mediator : IMediator
 	// Reserved for diagnostic/test access.
 	internal static int CachedRequestWrapperCount => RequestWrapperCache.Count;
 	internal static int CachedNotificationWrapperCount => NotificationWrapperCache.Count;
+	internal static int CachedStreamWrapperCount => StreamWrapperCache.Count;
 	internal static Assembly Assembly => typeof(Mediator).Assembly;
 }
