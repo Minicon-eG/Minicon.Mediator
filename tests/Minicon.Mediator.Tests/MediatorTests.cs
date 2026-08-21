@@ -258,6 +258,36 @@ public class MediatorTests
 		Assert.True(CancelledHandler.Seen.CanBeCanceled);
 	}
 
+	// ---- Configuration ----
+
+	[Fact]
+	public void ServiceLifetime_is_an_alias_for_Lifetime()
+	{
+		var config = new MediatorServiceConfiguration();
+		Assert.Equal(ServiceLifetime.Transient, config.Lifetime);
+		Assert.Equal(ServiceLifetime.Transient, config.ServiceLifetime);
+
+		config.ServiceLifetime = ServiceLifetime.Singleton;
+		Assert.Equal(ServiceLifetime.Singleton, config.Lifetime);
+
+		config.Lifetime = ServiceLifetime.Scoped;
+		Assert.Equal(ServiceLifetime.Scoped, config.ServiceLifetime);
+	}
+
+	[Fact]
+	public void ServiceLifetime_drives_handler_registration()
+	{
+		var services = new ServiceCollection();
+		services.AddMediator(cfg =>
+		{
+			cfg.RegisterServicesFromAssemblyContaining<MediatorTests>();
+			cfg.ServiceLifetime = ServiceLifetime.Singleton;
+		});
+
+		var descriptor = services.First(d => d.ServiceType == typeof(IRequestHandler<Ping, string>));
+		Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+	}
+
 	// ---- Guard clauses ----
 
 	[Fact]

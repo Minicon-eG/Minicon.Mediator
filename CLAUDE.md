@@ -23,7 +23,7 @@ dotnet test --filter "FullyQualifiedName~Publish_fans_out_to_all_handlers"
 
 Release/Publish nach NuGet.org läuft über GitHub Actions (`.github/workflows/publish.yml`):
 Push eines Tags `v*` auf `main` triggert `dotnet pack` + `dotnet nuget push` mit `secrets.NUGET_API_KEY`.
-Die `Version` wird in `src/Minicon.Mediator/Minicon.Mediator.csproj` gepflegt (aktuell `2.2.0`) — vor einem
+Die `Version` wird in `src/Minicon.Mediator/Minicon.Mediator.csproj` gepflegt (aktuell `2.3.0`) — vor einem
 neuen Release dort hochzählen und passend taggen. `artifacts/` ist gitignored und enthält lokal ggf. alte
 `.nupkg`-Stände; nicht als Versionsquelle verwenden.
 
@@ -67,7 +67,9 @@ object-typisierten Eintritt (`Send`/`CreateStream`/`Publish`) auf stark typisier
 
 6. **`MediatorServiceConfiguration.cs`** (Projektwurzel, nicht `Extensions/`) — das Konfigurationsobjekt für
    `AddMediator(cfg => …)`: `RegisterServicesFromAssembly(ies)`, `RegisterServicesFromAssemblyContaining<T>()`,
-   `Lifetime`. Spiegelt `MediatRServiceConfiguration` aus MediatR v12+.
+   `Lifetime`. Spiegelt `MediatRServiceConfiguration` aus MediatR v12+. `ServiceLifetime` ist ein Alias auf
+   dasselbe Backing-Feld wie `Lifetime` (Name aus `Mediator`/martinothamar) — beide Namen müssen denselben
+   Wert liefern; Default bleibt `Transient` (MediatR), **nicht** `Singleton` (Mediator).
 
 7. **`Abstractions/`** — das öffentliche, MediatR-kompatible Vertrags-Surface (`IRequest`, `IRequest<T>`,
    `IStreamRequest<T>`, `INotification`, `IRequestHandler<,>`, `IStreamRequestHandler<,>`,

@@ -137,8 +137,13 @@ inner stages always run against the request the pipeline started with.
 - `services.AddMediator()` (source-generated) → `services.AddMediator(cfg => cfg.RegisterServicesFromAssemblyContaining<T>())`
 - `IRequest<T>`, `IPipelineBehavior<,>`, `MessageHandlerDelegate<,>` keep their names; behaviors in the
   `(request, cancellationToken, next)` / `ValueTask` shape compile unchanged (see above).
-- Handlers must return `Task<T>` rather than `ValueTask<T>`, and `IMessage`/`ICommand`/`IQuery` have no
-  equivalent — use `IRequest`/`IRequest<T>`.
+- `cfg.ServiceLifetime` works as an alias of `cfg.Lifetime`. Note the default differs: `Transient` here
+  (MediatR behavior) versus `Singleton` in `Mediator` — set it explicitly if you relied on the latter.
+
+Not carried over: handlers return `Task<T>`, not `ValueTask<T>`, and `Send` returns `Task<T>`
+(`await` works either way, assigning to a `ValueTask<T>` does not). `IMessage`, `ICommand`/`IQuery` and
+their handler interfaces have no equivalent — use `IRequest`/`IRequest<T>`. Notifications always fan out
+sequentially; there is no `INotificationPublisher` to swap in.
 
 ## Migrating from MediatR
 
