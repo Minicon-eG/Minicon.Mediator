@@ -23,7 +23,7 @@ public class MediatorTests
 
 	public sealed class PingHandler : IRequestHandler<Ping, string>
 	{
-		public Task<string> Handle(Ping request, CancellationToken ct) => Task.FromResult($"Pong: {request.Message}");
+		public ValueTask<string> Handle(Ping request, CancellationToken ct) => ValueTask.FromResult($"Pong: {request.Message}");
 	}
 
 	[Fact]
@@ -38,7 +38,8 @@ public class MediatorTests
 
 	public record DoWork : IRequest;
 
-	public sealed class DoWorkHandler : IRequestHandler<DoWork, Unit>
+	// Deliberately the Task-returning (MediatR) shape, to cover the ITaskRequestHandler bridge.
+	public sealed class DoWorkHandler : ITaskRequestHandler<DoWork, Unit>
 	{
 		public static bool Handled;
 		public Task<Unit> Handle(DoWork request, CancellationToken ct)
@@ -93,7 +94,7 @@ public class MediatorTests
 
 	public sealed class TracedHandler : IRequestHandler<Traced, string>
 	{
-		public Task<string> Handle(Traced request, CancellationToken ct) { Trace.Add("handler"); return Task.FromResult("ok"); }
+		public ValueTask<string> Handle(Traced request, CancellationToken ct) { Trace.Add("handler"); return ValueTask.FromResult("ok"); }
 	}
 
 	public sealed class OuterBehavior : IPipelineBehavior<Traced, string>
@@ -198,7 +199,8 @@ public class MediatorTests
 
 	public record Failing : IRequest<string>;
 
-	public sealed class FailingHandler : IRequestHandler<Failing, string>
+	// Task shape again — an exception thrown by a bridged handler must surface identically.
+	public sealed class FailingHandler : ITaskRequestHandler<Failing, string>
 	{
 		public Task<string> Handle(Failing request, CancellationToken ct) => throw new InvalidOperationException("boom");
 	}
@@ -234,7 +236,7 @@ public class MediatorTests
 	public sealed class CancelledHandler : IRequestHandler<Cancelled, string>
 	{
 		public static CancellationToken Seen;
-		public Task<string> Handle(Cancelled request, CancellationToken ct) { Seen = ct; return Task.FromResult("ok"); }
+		public ValueTask<string> Handle(Cancelled request, CancellationToken ct) { Seen = ct; return ValueTask.FromResult("ok"); }
 	}
 
 	public sealed class TokenSwappingBehavior : IPipelineBehavior<Cancelled, string>
@@ -256,6 +258,66 @@ public class MediatorTests
 
 		Assert.NotEqual(outer.Token, CancelledHandler.Seen);
 		Assert.True(CancelledHandler.Seen.CanBeCanceled);
+	}
+
+	// ---- Handler shapes: ValueTask (default) vs. Task (ITaskRequestHandler bridge) ----
+
+	public record CreateThing(string Name) : IRequest<string>;
+
+	// Exactly the shape a handler migrated from Mediator (martinothamar) has.
+	public class CreateThingHandler : IRequestHandler<CreateThing, string>
+	{
+		public async ValueTask<string> Handle(CreateThing request, CancellationToken cancellationToken)
+		{
+			await Task.Yield();
+			return $"created: {request.Name}";
+		}
+	}
+
+	public record RenameThing(string Name) : IRequest<string>;
+
+	public sealed class RenameThingHandler : ITaskRequestHandler<RenameThing, string>
+	{
+		public async Task<string> Handle(RenameThing request, CancellationToken cancellationToken)
+		{
+			await Task.Yield();
+			return $"renamed: {request.Name}";
+		}
+	}
+
+	[Fact]
+	public async Task Both_handler_shapes_are_discovered_and_dispatched()
+	{
+		var mediator = BuildMediator();
+
+		Assert.Equal("created: a", await mediator.Send(new CreateThing("a")));
+		Assert.Equal("renamed: b", await mediator.Send(new RenameThing("b")));
+	}
+
+	[Fact]
+	public async Task Task_shaped_handler_is_registered_under_IRequestHandler()
+	{
+		// The bridge only works if DI resolves ITaskRequestHandler implementations through the
+		// IRequestHandler service type the wrapper asks for.
+		var services = new ServiceCollection();
+		services.AddMediator(cfg => cfg.RegisterServicesFromAssemblyContaining<MediatorTests>());
+		var provider = services.BuildServiceProvider();
+
+		var handler = provider.GetRequiredService<IRequestHandler<RenameThing, string>>();
+		Assert.IsType<RenameThingHandler>(handler);
+		Assert.Equal("renamed: c", await handler.Handle(new RenameThing("c"), default));
+	}
+
+	[Fact]
+	public async Task Both_handler_shapes_run_through_pipeline_behaviors()
+	{
+		var services = new ServiceCollection();
+		services.AddMediator(cfg => cfg.RegisterServicesFromAssemblyContaining<MediatorTests>());
+		services.AddTransient(typeof(IPipelineBehavior<,>), typeof(SafePipelineBehavior<,>));
+		var mediator = services.BuildServiceProvider().GetRequiredService<IMediator>();
+
+		Assert.Equal("created: d", await mediator.Send(new CreateThing("d")));
+		Assert.Equal("renamed: e", await mediator.Send(new RenameThing("e")));
 	}
 
 	// ---- Configuration ----

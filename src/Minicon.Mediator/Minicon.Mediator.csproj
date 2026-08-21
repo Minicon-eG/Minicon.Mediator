@@ -13,10 +13,10 @@
     <!-- Package metadata -->
     <IsPackable>true</IsPackable>
     <PackageId>Minicon.Mediator</PackageId>
-    <Version>2.3.0</Version>
+    <Version>3.0.0</Version>
     <Authors>minicon eG</Authors>
     <Company>minicon eG</Company>
-    <Description>Leichtgewichtige, MediatR-API-kompatible Mediator-Implementierung für .NET (CQRS, Request/Response, Streaming, Notifications, Pipeline-Behaviors). Genau eine Laufzeit-Abhängigkeit.</Description>
+    <Description>Leichtgewichtige Mediator-Implementierung für .NET (CQRS, Request/Response, Streaming, Notifications, Pipeline-Behaviors) mit Typnamen aus MediatR und Mediator. Genau eine Laufzeit-Abhängigkeit.</Description>
     <PackageTags>mediator;cqrs;mediatr-alternative;pipeline;notifications;streaming;ddd</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>

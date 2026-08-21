@@ -26,7 +26,7 @@ internal sealed class RequestHandlerWrapperImpl<TRequest, TResponse> : RequestHa
 		if (behaviorArray.Length == 0)
 		{
 			// Hot path: skip pipeline construction entirely.
-			return handler.Handle(typedRequest, cancellationToken);
+			return handler.Handle(typedRequest, cancellationToken).AsTask();
 		}
 
 		return ExecutePipeline(behaviorArray, 0, typedRequest, handler, cancellationToken);
@@ -47,7 +47,9 @@ internal sealed class RequestHandlerWrapperImpl<TRequest, TResponse> : RequestHa
 	{
 		if (index >= behaviors.Length)
 		{
-			return handler.Handle(request, cancellationToken);
+			// The pipeline itself is Task-based (RequestHandlerDelegate<TResponse>), so the handler's
+			// ValueTask is converted once here, at the innermost stage.
+			return handler.Handle(request, cancellationToken).AsTask();
 		}
 
 		// Capture the next stage as a delegate. The behavior may forward its own cancellation token.

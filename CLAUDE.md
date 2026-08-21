@@ -4,9 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Was das ist
 
-`Minicon.Mediator` ist eine eigenständige, **MediatR-API-kompatible** Mediator-Bibliothek für .NET
-(Request/Response, Streaming, Notifications, Pipeline-Behaviors). Sie ist als NuGet-Paket gedacht und hat
-genau **eine** Laufzeit-Abhängigkeit: `Microsoft.Extensions.DependencyInjection.Abstractions`.
+`Minicon.Mediator` ist eine eigenständige Mediator-Bibliothek für .NET (Request/Response, Streaming,
+Notifications, Pipeline-Behaviors). Sie ist als NuGet-Paket gedacht und hat genau **eine**
+Laufzeit-Abhängigkeit: `Microsoft.Extensions.DependencyInjection.Abstractions`.
+
+Die Typnamen folgen **MediatR** *und* **`Mediator` (martinothamar)** — beide Ökosysteme sollen mit
+minimalem Aufwand migrieren können. Wo die beiden Vorbilder kollidieren, gilt seit 3.0.0: **`Mediator`
+gewinnt beim Namen, MediatR bekommt einen Nebenweg.** Konkret ist `IRequestHandler<,>` `ValueTask`-basiert
+(Mediator), Task-Handler implementieren `ITaskRequestHandler<,>`.
 
 Target Framework: `net10.0`.
 
@@ -23,7 +28,7 @@ dotnet test --filter "FullyQualifiedName~Publish_fans_out_to_all_handlers"
 
 Release/Publish nach NuGet.org läuft über GitHub Actions (`.github/workflows/publish.yml`):
 Push eines Tags `v*` auf `main` triggert `dotnet pack` + `dotnet nuget push` mit `secrets.NUGET_API_KEY`.
-Die `Version` wird in `src/Minicon.Mediator/Minicon.Mediator.csproj` gepflegt (aktuell `2.3.0`) — vor einem
+Die `Version` wird in `src/Minicon.Mediator/Minicon.Mediator.csproj` gepflegt (aktuell `3.0.0`) — vor einem
 neuen Release dort hochzählen und passend taggen. `artifacts/` ist gitignored und enthält lokal ggf. alte
 `.nupkg`-Stände; nicht als Versionsquelle verwenden.
 
@@ -43,6 +48,8 @@ object-typisierten Eintritt (`Send`/`CreateStream`/`Publish`) auf stark typisier
    löst Handler und `IPipelineBehavior<,>` aus dem **scoped** `IServiceProvider` auf und führt die Pipeline
    per **rekursivem Index-Dispatch** aus (`ExecutePipeline`), nicht per `.Reverse().Aggregate()`. Hot Path:
    ohne Behaviors wird direkt der Handler aufgerufen, ohne Pipeline-Aufbau.
+   Handler liefern `ValueTask<TResponse>`, die Pipeline ist `Task`-basiert — die Umwandlung passiert mit
+   genau einem `.AsTask()` an der innersten Stelle (beide `return handler.Handle(...)`-Zweige).
 
 3. **`Internal/StreamHandlerWrapper[Impl].cs`** — dasselbe Muster für `IAsyncEnumerable<T>`:
    `IStreamRequestHandler<,>` + `IStreamPipelineBehavior<,>`, rekursiver Index-Dispatch, gleicher
@@ -81,9 +88,19 @@ object-typisierten Eintritt (`Send`/`CreateStream`/`Publish`) auf stark typisier
 
 ## Konventionen / Constraints
 
-- **API-Kompatibilität zu MediatR ist ein hartes Ziel.** Typnamen/Signaturen in `Abstractions/` nicht
-  umbenennen oder umformen — Migrationsversprechen aus der README (1:1 `using`-Tausch) muss gelten.
-  Wird das Vertrags-Surface erweitert, gehört der neue Typ auch in die README-Migrationsliste.
+- **Migrierbarkeit aus MediatR *und* `Mediator` ist ein hartes Ziel.** Typnamen/Signaturen in
+  `Abstractions/` nicht umbenennen oder umformen — die Migrationslisten in der README müssen gelten.
+  Wird das Vertrags-Surface erweitert, gehört der neue Typ auch in die README-Migrationslisten.
+- **Wenn beide Vorbilder denselben Namen mit unterschiedlicher Signatur belegen**, gibt es zwei erprobte
+  Muster (in dieser Reihenfolge prüfen):
+  1. **Unterschiedliche Parameterlisten** → zwei Overloads in einem Interface mit gegenseitigen Default
+     Interface Methods. So gelöst bei `IPipelineBehavior<,>.Handle`.
+  2. **Gleiche Parameterliste, nur anderer Rückgabetyp** → geht *nicht* als Overload (C# überlädt nicht
+     nach Rückgabetyp). Dann bekommt eine Form den Namen und die andere ein abgeleitetes Interface, das
+     die Methode per `new` shadowt und die Basis-Methode per **expliziter** DIM überbrückt. So gelöst bei
+     `IRequestHandler<,>` (ValueTask) ↔ `ITaskRequestHandler<,>` (Task). Vorteil: Der Wrapper löst
+     weiterhin nur `IRequestHandler<,>` auf, der Assembly-Scan findet beide Formen automatisch, weil
+     `ITaskRequestHandler` in `GetInterfaces()` auch `IRequestHandler` mitbringt.
 - **Genau eine Laufzeit-Abhängigkeit.** Keine weiteren `PackageReference`s ins Hauptprojekt aufnehmen.
   Das ist der Grund für manche „Rad neu erfunden"-Stellen (eigene `TryAddScoped`-Helper, eigenes
   `ToArray` statt LINQ) — nicht „aufräumen".

@@ -11,6 +11,12 @@ public readonly struct Unit : IEquatable<Unit>, IComparable<Unit>, IComparable
 	/// <summary>A pre-completed <see cref="Task{Unit}"/> returning <see cref="Value"/>.</summary>
 	public static readonly Task<Unit> Task = System.Threading.Tasks.Task.FromResult(Value);
 
+	/// <summary>
+	/// A pre-completed <see cref="ValueTask{Unit}"/> returning <see cref="Value"/> — the counterpart to
+	/// <see cref="Task"/> for handlers implementing <see cref="IRequestHandler{TRequest, TResponse}"/>.
+	/// </summary>
+	public static ValueTask<Unit> ValueTask => new(Value);
+
 	/// <inheritdoc />
 	public int CompareTo(Unit other) => 0;
 
