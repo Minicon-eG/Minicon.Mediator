@@ -111,6 +111,35 @@ public sealed class CountingBehavior<TReq, TRes> : IStreamPipelineBehavior<TReq,
 Handlers are discovered by the same assembly scan as `IRequestHandler<,>`; stream
 behaviors are registered manually (`services.AddTransient<IStreamPipelineBehavior<…>, …>()`).
 
+### Two behavior shapes
+
+`IPipelineBehavior<TRequest, TResponse>` accepts either of two `Handle` overloads — implement
+whichever one your existing code uses:
+
+```csharp
+// MediatR shape — Task, next() / next(ct)
+Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken ct);
+
+// Mediator (martinothamar) shape — ValueTask, next(request, ct)
+ValueTask<TResponse> Handle(TRequest request, CancellationToken ct, MessageHandlerDelegate<TRequest, TResponse> next);
+```
+
+The pipeline invokes the first one, so that is the allocation-free path; the second is reached through
+a default interface implementation costing one closure and a `ValueTask`/`Task` conversion per call.
+Implement exactly one — a behavior that implements neither compiles but recurses endlessly at runtime.
+
+Note that the request handed to `next(request, ct)` is accepted for signature compatibility only: the
+inner stages always run against the request the pipeline started with.
+
+## Migrating from Mediator (martinothamar)
+
+- `using Mediator;` → `using Minicon.Mediator;`
+- `services.AddMediator()` (source-generated) → `services.AddMediator(cfg => cfg.RegisterServicesFromAssemblyContaining<T>())`
+- `IRequest<T>`, `IPipelineBehavior<,>`, `MessageHandlerDelegate<,>` keep their names; behaviors in the
+  `(request, cancellationToken, next)` / `ValueTask` shape compile unchanged (see above).
+- Handlers must return `Task<T>` rather than `ValueTask<T>`, and `IMessage`/`ICommand`/`IQuery` have no
+  equivalent — use `IRequest`/`IRequest<T>`.
+
 ## Migrating from MediatR
 
 In most cases a single replacement is enough:

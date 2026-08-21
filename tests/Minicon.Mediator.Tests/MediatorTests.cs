@@ -123,6 +123,141 @@ public class MediatorTests
 		Assert.Equal(new[] { "outer:before", "handler", "outer:after" }, Trace);
 	}
 
+	// ---- Pipeline behaviors, Mediator (martinothamar) shape ----
+
+	// Mirrors behaviors migrated from `Mediator` 2.x: ValueTask, (request, ct, next) order,
+	// and `next(request, ct)` instead of `next()`.
+	public sealed class SafePipelineBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
+		where TRequest : IRequest<TResponse>
+	{
+		public async ValueTask<TResponse> Handle(
+			TRequest request,
+			CancellationToken cancellationToken,
+			MessageHandlerDelegate<TRequest, TResponse> next)
+		{
+			Trace.Add("safe:before");
+			try
+			{
+				return await next(request, cancellationToken);
+			}
+			finally
+			{
+				Trace.Add("safe:after");
+			}
+		}
+	}
+
+	[Fact]
+	public async Task Message_shaped_behavior_wraps_handler()
+	{
+		Trace.Clear();
+		var services = new ServiceCollection();
+		services.AddMediator(cfg => cfg.RegisterServicesFromAssemblyContaining<MediatorTests>());
+		services.AddTransient<IPipelineBehavior<Traced, string>, SafePipelineBehavior<Traced, string>>();
+		var mediator = services.BuildServiceProvider().GetRequiredService<IMediator>();
+
+		var result = await mediator.Send(new Traced());
+
+		Assert.Equal("ok", result);
+		Assert.Equal(new[] { "safe:before", "handler", "safe:after" }, Trace);
+	}
+
+	[Fact]
+	public async Task Message_and_request_shaped_behaviors_compose_in_registration_order()
+	{
+		Trace.Clear();
+		var services = new ServiceCollection();
+		services.AddMediator(cfg => cfg.RegisterServicesFromAssemblyContaining<MediatorTests>());
+		services.AddTransient<IPipelineBehavior<Traced, string>, OuterBehavior>();
+		services.AddTransient<IPipelineBehavior<Traced, string>, SafePipelineBehavior<Traced, string>>();
+		var mediator = services.BuildServiceProvider().GetRequiredService<IMediator>();
+
+		var result = await mediator.Send(new Traced());
+
+		Assert.Equal("ok", result);
+		Assert.Equal(
+			new[] { "outer:before", "safe:before", "handler", "safe:after", "outer:after" },
+			Trace);
+	}
+
+	[Fact]
+	public async Task Message_shaped_behavior_works_when_registered_as_open_generic()
+	{
+		Trace.Clear();
+		var services = new ServiceCollection();
+		services.AddMediator(cfg => cfg.RegisterServicesFromAssemblyContaining<MediatorTests>());
+		services.AddTransient(typeof(IPipelineBehavior<,>), typeof(SafePipelineBehavior<,>));
+		var mediator = services.BuildServiceProvider().GetRequiredService<IMediator>();
+
+		Assert.Equal("ok", await mediator.Send(new Traced()));
+		Assert.Equal(new[] { "safe:before", "handler", "safe:after" }, Trace);
+
+		// Also has to close over IRequest (i.e. IRequest<Unit>) without tripping the type constraint.
+		Assert.Equal(Unit.Value, await mediator.Send(new DoWork()));
+	}
+
+	public record Failing : IRequest<string>;
+
+	public sealed class FailingHandler : IRequestHandler<Failing, string>
+	{
+		public Task<string> Handle(Failing request, CancellationToken ct) => throw new InvalidOperationException("boom");
+	}
+
+	public sealed class SwallowingBehavior : IPipelineBehavior<Failing, string>
+	{
+		public async ValueTask<string> Handle(Failing request, CancellationToken ct, MessageHandlerDelegate<Failing, string> next)
+		{
+			try
+			{
+				return await next(request, ct);
+			}
+			catch (InvalidOperationException ex)
+			{
+				return $"caught: {ex.Message}";
+			}
+		}
+	}
+
+	[Fact]
+	public async Task Message_shaped_behavior_observes_handler_exceptions()
+	{
+		var services = new ServiceCollection();
+		services.AddMediator(cfg => cfg.RegisterServicesFromAssemblyContaining<MediatorTests>());
+		services.AddTransient<IPipelineBehavior<Failing, string>, SwallowingBehavior>();
+		var mediator = services.BuildServiceProvider().GetRequiredService<IMediator>();
+
+		Assert.Equal("caught: boom", await mediator.Send(new Failing()));
+	}
+
+	public record Cancelled : IRequest<string>;
+
+	public sealed class CancelledHandler : IRequestHandler<Cancelled, string>
+	{
+		public static CancellationToken Seen;
+		public Task<string> Handle(Cancelled request, CancellationToken ct) { Seen = ct; return Task.FromResult("ok"); }
+	}
+
+	public sealed class TokenSwappingBehavior : IPipelineBehavior<Cancelled, string>
+	{
+		public ValueTask<string> Handle(Cancelled request, CancellationToken ct, MessageHandlerDelegate<Cancelled, string> next)
+			=> next(request, new CancellationTokenSource().Token);
+	}
+
+	[Fact]
+	public async Task Message_shaped_behavior_forwards_its_own_cancellation_token()
+	{
+		var services = new ServiceCollection();
+		services.AddMediator(cfg => cfg.RegisterServicesFromAssemblyContaining<MediatorTests>());
+		services.AddTransient<IPipelineBehavior<Cancelled, string>, TokenSwappingBehavior>();
+		var mediator = services.BuildServiceProvider().GetRequiredService<IMediator>();
+
+		using var outer = new CancellationTokenSource();
+		await mediator.Send(new Cancelled(), outer.Token);
+
+		Assert.NotEqual(outer.Token, CancelledHandler.Seen);
+		Assert.True(CancelledHandler.Seen.CanBeCanceled);
+	}
+
 	// ---- Guard clauses ----
 
 	[Fact]
